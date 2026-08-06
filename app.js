@@ -68,9 +68,9 @@ const hudTooltip = document.getElementById('hud-tooltip');
 const hudLabel = document.getElementById('hud-label');
 const hudValue = document.getElementById('hud-value');
 
-// --- THREE.JS SCENE SETUP ---
+// --- THREE.JS SCENE SETUP & ULTRA-REALISTIC STUDIO LIGHTING ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#386b66'); // ChipTone Teal Background
+scene.background = new THREE.Color('#0b0e12'); // Dark studio backdrop
 
 const camera = new THREE.PerspectiveCamera(36, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 0, 17.5);
@@ -81,7 +81,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.25;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
@@ -91,29 +91,246 @@ controls.dampingFactor = 0.05;
 controls.enabled = false;
 controls.maxPolarAngle = Math.PI / 2 + 0.1;
 
-// Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+// N-Console Studio Directional Key Light + Soft 3D Spotlight Vignette + Cool Fill + Specular Point Accent
+const ambientLight = new THREE.AmbientLight(0xdbe6f0, 0.65);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xfff8ee, 2.2);
-keyLight.position.set(6, 12, 11);
+const keyLight = new THREE.DirectionalLight(0xfff6ea, 2.2);
+keyLight.position.set(-6, 14, 12); // Overhead-left casting down-right shadows like N-Console
 keyLight.castShadow = true;
+keyLight.shadow.mapSize.width = 2048;
+keyLight.shadow.mapSize.height = 2048;
+keyLight.shadow.camera.near = 0.5;
+keyLight.shadow.camera.far = 30;
+keyLight.shadow.camera.left = -12;
+keyLight.shadow.camera.right = 12;
+keyLight.shadow.camera.top = 10;
+keyLight.shadow.camera.bottom = -10;
+keyLight.shadow.bias = -0.0003;
+keyLight.shadow.radius = 2.5;
 scene.add(keyLight);
 
-// --- HELPER TO CREATE TEXT CANVAS TEXTURES ---
-function create3DTextTexture(text, w = 256, h = 64, bgColor = null, textColor = '#111704', fontSize = 28) {
+// Soft 3D Studio Spotlight creating a natural vignette falloff over the panel and highlighting raised 3D surfaces
+const vignetteSpotLight = new THREE.SpotLight(0xfff5ea, 3.8);
+vignetteSpotLight.position.set(0, 3, 14);
+vignetteSpotLight.angle = Math.PI / 3.0;
+vignetteSpotLight.penumbra = 0.88; // Smooth radial vignette edge
+vignetteSpotLight.decay = 1.0;
+vignetteSpotLight.castShadow = true;
+vignetteSpotLight.shadow.mapSize.width = 2048;
+vignetteSpotLight.shadow.mapSize.height = 2048;
+vignetteSpotLight.shadow.bias = -0.0003;
+scene.add(vignetteSpotLight);
+
+const fillLight = new THREE.DirectionalLight(0x7a9bb8, 0.75);
+fillLight.position.set(10, -6, 8);
+scene.add(fillLight);
+
+const specularPointLight = new THREE.PointLight(0xffeedd, 1.2, 25);
+specularPointLight.position.set(0, 4, 8);
+scene.add(specularPointLight);
+
+// --- PROCEDURAL GEOMETRY & TEXTURE GENERATORS ---
+// 0. Rounded Chamfered Box Geometry with Centered UV Alignment
+function createRoundedBoxGeometry(w, h, d, r = 0.04, bevelSegments = 3) {
+    const shape = new THREE.Shape();
+    const x = -w / 2, y = -h / 2;
+    shape.moveTo(x + r, y);
+    shape.lineTo(x + w - r, y);
+    shape.quadraticCurveTo(x + w, y, x + w, y + r);
+    shape.lineTo(x + w, y + h - r);
+    shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    shape.lineTo(x + r, y + h);
+    shape.quadraticCurveTo(x, y + h, x, y + h - r);
+    shape.lineTo(x, y + r);
+    shape.quadraticCurveTo(x, y, x + r, y);
+
+    const extrudeSettings = {
+        depth: Math.max(0.01, d - r * 2),
+        bevelEnabled: true,
+        bevelSegments: bevelSegments,
+        steps: 1,
+        bevelSize: r,
+        bevelThickness: r
+    };
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geo.center();
+
+    // Re-map UV coordinates based on actual geometry bounding box for perfect texture alignment
+    geo.computeBoundingBox();
+    const min = geo.boundingBox.min;
+    const max = geo.boundingBox.max;
+    const rangeX = max.x - min.x;
+    const rangeY = max.y - min.y;
+    const pos = geo.attributes.position;
+    const uvs = geo.attributes.uv;
+
+    for (let i = 0; i < pos.count; i++) {
+        const u = (pos.getX(i) - min.x) / rangeX;
+        const v = (pos.getY(i) - min.y) / rangeY;
+        uvs.setXY(i, u, v);
+    }
+    uvs.needsUpdate = true;
+    return geo;
+}
+
+// 1. Deep Slate Blue-Teal Powder-Coat & Micro Dust Noise Texture
+function generateGrungeNoiseTexture(baseHex = '#1c3640') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Base Deep Slate Blue-Teal Color Fill (10% Darker & Leaning Blue-Teal)
+    ctx.fillStyle = baseHex;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Fine powder-coat micro noise grain
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const n = (Math.random() - 0.5) * 18;
+        data[i]     = Math.max(0, Math.min(255, data[i] + n));
+        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + n));
+        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + n));
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Sparser, Half-Size Micro Whitish Dust Speckles with Varied Alpha Intensities
+    for (let i = 0; i < 320; i++) {
+        const rx = Math.random() * 512;
+        const ry = Math.random() * 512;
+        const rw = Math.random() * 0.9 + 0.5; // Half size (0.5px to 1.4px)
+        const alpha = Math.random() * 0.38 + 0.08; // Varied intensity
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fillRect(rx, ry, rw, rw);
+    }
+
+    // Subtle dark grunge wear spots
+    for (let i = 0; i < 180; i++) {
+        const rx = Math.random() * 512;
+        const ry = Math.random() * 512;
+        const rw = Math.random() * 1.8 + 0.8;
+        const alpha = Math.random() * 0.22 + 0.06;
+        ctx.fillStyle = `rgba(10, 16, 20, ${alpha})`;
+        ctx.fillRect(rx, ry, rw, rw);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(4, 3);
+    return texture;
+}
+
+const powderCoatBumpMap = generateGrungeNoiseTexture('#1c3640');
+
+// 2. Grungy Non-Linear Noise Texture Generator for Knob Caps
+function generateAnodizedKnobGrungeTexture(baseHexColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = baseHexColor;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Fine per-pixel micro noise grain (non-linear, organic)
+    const imgData = ctx.getImageData(0, 0, 256, 256);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const n = (Math.random() - 0.5) * 22;
+        data[i]     = Math.max(0, Math.min(255, data[i] + n));
+        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + n));
+        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + n));
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Whitish dust noise speckles
+    ctx.fillStyle = 'rgba(245, 250, 255, 0.35)';
+    for (let i = 0; i < 450; i++) {
+        const rx = Math.random() * 256;
+        const ry = Math.random() * 256;
+        const rw = Math.random() * 1.8 + 0.8;
+        ctx.fillRect(rx, ry, rw, rw);
+    }
+
+    // Dark grime wear spots
+    ctx.fillStyle = 'rgba(10, 15, 20, 0.22)';
+    for (let i = 0; i < 160; i++) {
+        const rx = Math.random() * 256;
+        const ry = Math.random() * 256;
+        const rw = Math.random() * 2.2 + 1;
+        ctx.fillRect(rx, ry, rw, rw);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2, 2);
+    return texture;
+}
+
+function generateRubberKnobNoiseTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#1c2024';
+    ctx.fillRect(0, 0, 256, 256);
+
+    ctx.fillStyle = 'rgba(220, 230, 240, 0.25)';
+    for (let i = 0; i < 500; i++) {
+        ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.8, 1.8);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2, 2);
+    return texture;
+}
+
+const rubberKnobNoiseMap = generateRubberKnobNoiseTexture();
+
+// Soft Warm Amber/Beige Backlight Halo Texture for Push Buttons (Strong Radiant Glow)
+function createSoftBacklightHaloTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    const grad = ctx.createRadialGradient(128, 64, 4, 128, 64, 120);
+    grad.addColorStop(0, 'rgba(255, 235, 150, 1.0)');  // Bright warm yellow center glow
+    grad.addColorStop(0.35, 'rgba(255, 195, 80, 0.85)'); // Warm amber mid glow
+    grad.addColorStop(0.70, 'rgba(220, 150, 40, 0.40)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 128);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+const buttonBacklightHaloTex = createSoftBacklightHaloTexture();
+
+// 2. Silkscreen Text Canvas Helper with Letterpress Inset Shadow & PBR Material
+function create3DTextTexture(text, w = 256, h = 64, textColor = '#e8ecf0', fontSize = 24, fontStyle = 'bold') {
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    if (bgColor) {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, w, h);
-    }
-    ctx.font = `bold ${fontSize}px "Share Tech Mono", "Outfit", sans-serif`;
-    ctx.fillStyle = textColor;
+
+    ctx.font = `${fontStyle} ${fontSize}px "Outfit", "Inter", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    // Letterpress subtle dark shadow underneath
+    ctx.fillStyle = 'rgba(10, 15, 20, 0.75)';
+    ctx.fillText(text, w / 2, h / 2 + 1.5);
+
+    // Main silkscreen ink text
+    ctx.fillStyle = textColor;
     ctx.fillText(text, w / 2, h / 2);
 
     const texture = new THREE.CanvasTexture(canvas);
@@ -121,18 +338,40 @@ function create3DTextTexture(text, w = 256, h = 64, bgColor = null, textColor = 
     return texture;
 }
 
-// --- HELPER TO RENDER VECTOR WAVEFORM DIAGRAM TEXTURES ---
+function createSilkscreenMesh(text, w, h, textColor = '#e2e8f0', fontSize = 24) {
+    const tex = create3DTextTexture(text, w * 128, h * 128, textColor, fontSize);
+    const mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        transparent: true,
+        roughness: 0.75,
+        metalness: 0.1,
+        depthWrite: false
+    });
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+}
+
+// 3. Vector Waveform Diagram Textures with Vintage Print Styling
 function createWaveformDiagramTexture(type, isSelected = false) {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 96;
     const ctx = canvas.getContext('2d');
 
-    // Background
-    ctx.fillStyle = isSelected ? '#d94336' : '#f2e880';
+    // Background - Recessed Bevel Button Face
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, 96);
+    if (isSelected) {
+        bgGrad.addColorStop(0, '#e5533d');
+        bgGrad.addColorStop(1, '#a82c1a');
+    } else {
+        bgGrad.addColorStop(0, '#f0e6ab');
+        bgGrad.addColorStop(1, '#cfc280');
+    }
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, 128, 96);
-    ctx.strokeStyle = isSelected ? '#ffffff' : '#a83d09';
+
+    ctx.strokeStyle = isSelected ? '#ffffff' : '#223328';
     ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
 
     const cy = 48;
     ctx.beginPath();
@@ -224,11 +463,10 @@ function playNotePitch(overrideFreq = null) {
     }
 }
 
-// Preset Trigger Definitions - PROCEDURALLY RANDOMIZED ON EACH TAP
+// Preset Trigger Definitions
 function triggerChipTonePreset(name) {
     STATE.lastPresetName = name.toUpperCase();
     const p = { ...DEFAULT_SFXR_PARAMS };
-
     const rnd = (min, max) => min + Math.random() * (max - min);
 
     if (name === 'coin') {
@@ -290,9 +528,103 @@ function triggerChipTonePreset(name) {
     playNotePitch();
 }
 
-// --- DUAL LCD ENVELOPE GRAPH CANVAS TEXTURES ---
+// --- VINTAGE AGED PARCHMENT METERS (ADSR & FREQUENCY DISPLAYS) ---
 let freqCanvas, freqCtx, freqTexture;
 let ampCanvas, ampCtx, ampTexture;
+
+function renderVintageParchmentFace(ctx, titleStr) {
+    const w = 512, h = 320;
+    // Radial Gradient (N-Console vintage warm cream #f7f2e1 -> #e2d4b2 + top soft yellow lamp light #fef0c7)
+    const bgGrad = ctx.createRadialGradient(256, 40, 20, 256, 160, 340);
+    bgGrad.addColorStop(0, '#fef5d8'); // Warm top lamp glow
+    bgGrad.addColorStop(0.45, '#f4ebd2');
+    bgGrad.addColorStop(1, '#dfceaa');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle paper grain speckle overlay
+    ctx.fillStyle = 'rgba(80, 65, 40, 0.035)';
+    for (let i = 0; i < 600; i++) {
+        const rx = Math.random() * w;
+        const ry = Math.random() * h;
+        ctx.fillRect(rx, ry, 2, 2);
+    }
+
+    // Outer Vignette shadow rim inside glass
+    const shadowGrad = ctx.createRadialGradient(256, 160, 180, 256, 160, 310);
+    shadowGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    shadowGrad.addColorStop(1, 'rgba(60,45,20,0.30)');
+    ctx.fillStyle = shadowGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Grid Scale Lines
+    ctx.strokeStyle = 'rgba(70, 60, 45, 0.16)';
+    ctx.lineWidth = 2;
+    for (let x = 32; x < w; x += 32) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let y = 32; y < h; y += 32) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // Vintage Watermark / Scale Header
+    ctx.font = 'bold 16px "Share Tech Mono", monospace';
+    ctx.fillStyle = 'rgba(60, 50, 35, 0.45)';
+    ctx.textAlign = 'right';
+    ctx.fillText(titleStr, w - 20, 28);
+}
+
+function updateDisplayTextures() {
+    if (!freqCtx || !ampCtx) return;
+
+    const p = STATE.params;
+
+    // 1. Frequency Envelope Display Graph
+    renderVintageParchmentFace(freqCtx, 'FREQ MODULATION [Hz]');
+
+    const startY = 320 - (p.base_freq * 240 + 30);
+    const endY = 320 - Math.max(10, Math.min(310, (p.base_freq + p.freq_ramp * 0.5) * 240 + 30));
+
+    freqCtx.fillStyle = 'rgba(40, 75, 65, 0.28)';
+    freqCtx.beginPath();
+    freqCtx.moveTo(0, 320);
+    freqCtx.lineTo(0, startY);
+    freqCtx.quadraticCurveTo(256, (startY + endY) * 0.5 - p.freq_dramp * 80, 512, endY);
+    freqCtx.lineTo(512, 320);
+    freqCtx.closePath();
+    freqCtx.fill();
+
+    // Half opacity stroke line
+    freqCtx.strokeStyle = 'rgba(29, 51, 42, 0.50)';
+    freqCtx.lineWidth = 5;
+    freqCtx.stroke();
+
+    // 2. Amplitude ADSR Envelope Display Graph
+    renderVintageParchmentFace(ampCtx, 'AMPLITUDE ADSR [mS]');
+
+    const aX = p.env_attack * 400;
+    const dX = aX + p.env_decay * 400;
+    const sY = 320 - (p.env_sustain * 240 + 20);
+    const rX = Math.min(480, dX + p.env_release * 400);
+
+    ampCtx.fillStyle = 'rgba(40, 75, 65, 0.28)';
+    ampCtx.beginPath();
+    ampCtx.moveTo(0, 320);
+    ampCtx.lineTo(aX, 30);
+    ampCtx.lineTo(dX, sY);
+    ampCtx.lineTo(rX, sY);
+    ampCtx.lineTo(rX + 30, 320);
+    ampCtx.closePath();
+    ampCtx.fill();
+
+    // Half opacity stroke line
+    ampCtx.strokeStyle = 'rgba(29, 51, 42, 0.50)';
+    ampCtx.lineWidth = 5;
+    ampCtx.stroke();
+
+    if (freqTexture) freqTexture.needsUpdate = true;
+    if (ampTexture) ampTexture.needsUpdate = true;
+}
 
 function initDisplayTextures() {
     freqCanvas = document.createElement('canvas');
@@ -306,115 +638,139 @@ function initDisplayTextures() {
     updateDisplayTextures();
 
     freqTexture = new THREE.CanvasTexture(freqCanvas);
+    freqTexture.colorSpace = THREE.SRGBColorSpace;
+    freqTexture.anisotropy = 8;
     freqTexture.needsUpdate = true;
 
     ampTexture = new THREE.CanvasTexture(ampCanvas);
+    ampTexture.colorSpace = THREE.SRGBColorSpace;
+    ampTexture.anisotropy = 8;
     ampTexture.needsUpdate = true;
 }
 
-function updateDisplayTextures() {
-    if (!freqCtx || !ampCtx) return;
+// Procedural Glass Glare Streak Texture
+function createGlassGlareTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
 
-    const p = STATE.params;
+    const grad = ctx.createLinearGradient(0, 0, 256, 256);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.20)');
+    grad.addColorStop(0.30, 'rgba(255, 255, 255, 0.03)');
+    grad.addColorStop(0.70, 'rgba(255, 255, 255, 0.00)');
+    grad.addColorStop(0.88, 'rgba(255, 255, 255, 0.08)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.18)');
 
-    // 1. Frequency Envelope Display Graph
-    freqCtx.fillStyle = '#e5ebd9';
-    freqCtx.fillRect(0, 0, 512, 320);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
 
-    freqCtx.strokeStyle = 'rgba(0, 0, 0, 0.12)';
-    freqCtx.lineWidth = 2;
-    for (let x = 0; x < 512; x += 32) {
-        freqCtx.beginPath(); freqCtx.moveTo(x, 0); freqCtx.lineTo(x, 320); freqCtx.stroke();
-    }
-
-    const startY = 320 - (p.base_freq * 260 + 20);
-    const endY = 320 - Math.max(10, Math.min(310, (p.base_freq + p.freq_ramp * 0.5) * 260 + 20));
-
-    freqCtx.fillStyle = 'rgba(90, 115, 105, 0.45)';
-    freqCtx.beginPath();
-    freqCtx.moveTo(0, 320);
-    freqCtx.lineTo(0, startY);
-    freqCtx.quadraticCurveTo(256, (startY + endY) * 0.5 - p.freq_dramp * 80, 512, endY);
-    freqCtx.lineTo(512, 320);
-    freqCtx.closePath();
-    freqCtx.fill();
-
-    freqCtx.strokeStyle = '#223832';
-    freqCtx.lineWidth = 5;
-    freqCtx.stroke();
-
-    // 2. Amplitude ADSR Envelope Display Graph
-    ampCtx.fillStyle = '#e5ebd9';
-    ampCtx.fillRect(0, 0, 512, 320);
-
-    ampCtx.strokeStyle = 'rgba(0, 0, 0, 0.12)';
-    ampCtx.lineWidth = 2;
-    for (let x = 0; x < 512; x += 32) {
-        ampCtx.beginPath(); ampCtx.moveTo(x, 0); ampCtx.lineTo(x, 320); ampCtx.stroke();
-    }
-
-    const aX = p.env_attack * 400;
-    const dX = aX + p.env_decay * 400;
-    const sY = 320 - (p.env_sustain * 260 + 10);
-    const rX = Math.min(480, dX + p.env_release * 400);
-
-    ampCtx.fillStyle = 'rgba(90, 115, 105, 0.45)';
-    ampCtx.beginPath();
-    ampCtx.moveTo(0, 320);
-    ampCtx.lineTo(aX, 20);
-    ampCtx.lineTo(dX, sY);
-    ampCtx.lineTo(rX, sY);
-    ampCtx.lineTo(rX + 30, 320);
-    ampCtx.closePath();
-    ampCtx.fill();
-
-    ampCtx.strokeStyle = '#223832';
-    ampCtx.lineWidth = 5;
-    ampCtx.stroke();
-
-    if (freqTexture) freqTexture.needsUpdate = true;
-    if (ampTexture) ampTexture.needsUpdate = true;
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
 }
 
 initDisplayTextures();
 
 // --- 3D MATERIALS & MESH CHASSIS ---
-const matTealChassis = new THREE.MeshStandardMaterial({ color: 0x3d7a74, roughness: 0.4, metalness: 0.2 });
-const matDarkBezel   = new THREE.MeshStandardMaterial({ color: 0x224844, roughness: 0.3, metalness: 0.5 });
-const matYellowBtn   = new THREE.MeshStandardMaterial({ color: 0xf2e880, roughness: 0.3, metalness: 0.1 });
-const matKnobTeal    = new THREE.MeshStandardMaterial({ color: 0x7aa8a2, roughness: 0.3, metalness: 0.4 });
+// Deep Slate Teal Powder-Coated & Wear Grunge Metal Chassis (N-Console Style)
+const matTealChassis = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    map: powderCoatBumpMap,
+    bumpMap: powderCoatBumpMap,
+    bumpScale: 0.022,
+    roughness: 0.65,
+    metalness: 0.15,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.35
+});
 
-const matWhiteKey    = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.05 });
-const matBlackKey    = new THREE.MeshStandardMaterial({ color: 0x181a1c, roughness: 0.3, metalness: 0.5 });
+// Beveled Dark Steel Display Bezels & Hardware Trims
+const matDarkSteel = new THREE.MeshStandardMaterial({
+    color: 0x22262a,
+    roughness: 0.32,
+    metalness: 0.85
+});
 
-const matFreqDisplay = new THREE.MeshBasicMaterial({ map: freqTexture });
-const matAmpDisplay  = new THREE.MeshBasicMaterial({ map: ampTexture });
+const matInnerShadowBezel = new THREE.MeshBasicMaterial({
+    color: 0x0a0c0e
+});
+
+// Non-metallic transparent glass glare cover (subtle reflection streak overlay)
+const matGlassCover = new THREE.MeshBasicMaterial({
+    map: createGlassGlareTexture(),
+    transparent: true,
+    opacity: 0.25,
+    depthWrite: false
+});
+
+const matYellowBtnFace = new THREE.MeshStandardMaterial({
+    color: 0xedd891,
+    roughness: 0.45,
+    metalness: 0.15
+});
+
+const matWhiteKey = new THREE.MeshStandardMaterial({ color: 0xfdfdfd, roughness: 0.22, metalness: 0.05 });
+const matBlackKey = new THREE.MeshStandardMaterial({ color: 0x141618, roughness: 0.35, metalness: 0.60 });
+
+const matFreqDisplayFace = new THREE.MeshBasicMaterial({ map: freqTexture });
+const matAmpDisplayFace  = new THREE.MeshBasicMaterial({ map: ampTexture });
 
 const interactiveMeshes = [];
 const pianoKeyMeshes = [];
 const waveBtnMaterials = {};
+const waveBtnMeshes = {};
+const presetBtnMeshes = {};
 const knobGroups = {};
 const knobMeshes = {};
 
 const synthGroup = new THREE.Group();
 scene.add(synthGroup);
 
-const CHASSIS_W = 15.6;
+const CHASSIS_W = 15.8;
 const CHASSIS_H = 9.8;
-const CHASSIS_D = 0.6;
+const CHASSIS_D = 0.65;
 
+// Base Chassis Slab
 const mainBase = new THREE.Mesh(new THREE.BoxGeometry(CHASSIS_W, CHASSIS_H, CHASSIS_D), matTealChassis);
 mainBase.receiveShadow = true;
+mainBase.castShadow = true;
 synthGroup.add(mainBase);
 
-// --- 1. LEFT GENERATOR RACK (Presets) ---
+// Bottom Dark Walnut Wood Trim Strip (N-Console Bottom Bar)
+const matWalnutWood = new THREE.MeshStandardMaterial({
+    color: 0x3d2417,
+    roughness: 0.65,
+    metalness: 0.10
+});
+const bottomWoodBar = new THREE.Mesh(new THREE.BoxGeometry(CHASSIS_W, 0.40, CHASSIS_D + 0.06), matWalnutWood);
+bottomWoodBar.position.set(0, -CHASSIS_H * 0.5 + 0.20, 0.03);
+bottomWoodBar.castShadow = true;
+synthGroup.add(bottomWoodBar);
+
+// 4 Corner Hex / Torx Screws (gui1.1.png Style)
+const matScrewChrome = new THREE.MeshStandardMaterial({ color: 0xb0b8c0, metalness: 0.95, roughness: 0.15 });
+const screwGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 16);
+
+[[-7.3, 4.4], [7.3, 4.4], [-7.3, -4.4], [7.3, -4.4]].forEach(([sx, sy]) => {
+    const screw = new THREE.Mesh(screwGeo, matScrewChrome);
+    screw.rotation.x = Math.PI / 2;
+    screw.position.set(sx, sy, CHASSIS_D * 0.5 + 0.04);
+    screw.castShadow = true;
+    synthGroup.add(screw);
+
+    // Inner hex socket indentation
+    const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.09, 6), new THREE.MeshBasicMaterial({ color: 0x111417 }));
+    socket.rotation.x = Math.PI / 2;
+    socket.position.set(sx, sy, CHASSIS_D * 0.5 + 0.05);
+    synthGroup.add(socket);
+});
+
+// --- 1. LEFT GENERATOR RACK (Presets with Recessed 3D Bevel Cutouts & Soft Beige Backlight) ---
 const genRackGroup = new THREE.Group();
 genRackGroup.position.set(-CHASSIS_W * 0.38, 0, CHASSIS_D * 0.5);
 synthGroup.add(genRackGroup);
 
 // Header Label
-const genHeaderTex = create3DTextTexture('GENERATOR', 256, 64, null, '#ffffff', 26);
-const genHeaderMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.4), new THREE.MeshBasicMaterial({ map: genHeaderTex, transparent: true }));
+const genHeaderMesh = createSilkscreenMesh('GENERATOR', 2.2, 0.4, '#ffffff', 26);
 genHeaderMesh.position.set(0, 4.3, 0.02);
 genRackGroup.add(genHeaderMesh);
 
@@ -429,27 +785,42 @@ const RACK_PRESETS = [
     { id: 'blip', label: '👉 BLIP' }
 ];
 
+// Pre-create rounded button geometry for Generator push buttons
+const roundedPresetBtnGeo = createRoundedBoxGeometry(2.18, 0.68, 0.22, 0.05, 3);
+
 RACK_PRESETS.forEach((p, idx) => {
     const py = 3.6 - idx * 0.95;
-    const meshBtn = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.75, 0.2), matYellowBtn);
-    meshBtn.position.set(0, py, 0.1);
+
+    // Recessed 3D Stamped Chassis Bevel Cutout Frame
+    const cutoutFrame = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.82, 0.16), matDarkSteel);
+    cutoutFrame.position.set(0, py, -0.02);
+    genRackGroup.add(cutoutFrame);
+
+    const innerShadow = new THREE.Mesh(new THREE.BoxGeometry(2.26, 0.74, 0.18), matInnerShadowBezel);
+    innerShadow.position.set(0, py, -0.01);
+    genRackGroup.add(innerShadow);
+
+    // Tactile Hardware Push Button Cap with Rounded Chamfered Edges
+    const meshBtn = new THREE.Mesh(roundedPresetBtnGeo, matYellowBtnFace);
+    meshBtn.position.set(0, py, 0.10);
+    meshBtn.castShadow = true;
     meshBtn.userData = { type: 'presetBtn', preset: p.id, label: p.label };
     genRackGroup.add(meshBtn);
     interactiveMeshes.push(meshBtn);
+    presetBtnMeshes[p.id] = meshBtn;
 
-    const btnTex = create3DTextTexture(p.label, 256, 64, null, '#223832', 26);
-    const textMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.6), new THREE.MeshBasicMaterial({ map: btnTex, transparent: true }));
-    textMesh.position.set(0, 0, 0.11);
+    // Silkscreen text on button face
+    const textMesh = createSilkscreenMesh(p.label, 2.0, 0.6, '#223832', 26);
+    textMesh.position.set(0, 0, 0.12);
     meshBtn.add(textMesh);
 });
 
-// --- 2. TOP WAVEFORM BUTTON RACK WITH VECTOR WAVEFORM DIAGRAMS ---
+// --- 2. TOP WAVEFORM BUTTON RACK WITH RECESSED BEVELS ---
 const waveRackGroup = new THREE.Group();
 waveRackGroup.position.set(CHASSIS_W * 0.10, CHASSIS_H * 0.38, CHASSIS_D * 0.5);
 synthGroup.add(waveRackGroup);
 
-const waveHeaderTex = create3DTextTexture('WAVEFORM', 256, 64, null, '#ffffff', 26);
-const waveHeaderMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.4), new THREE.MeshBasicMaterial({ map: waveHeaderTex, transparent: true }));
+const waveHeaderMesh = createSilkscreenMesh('WAVEFORM', 2.4, 0.4, '#ffffff', 26);
 waveHeaderMesh.position.set(-4.5, 0, 0.02);
 waveRackGroup.add(waveHeaderMesh);
 
@@ -463,15 +834,25 @@ const WAVE_LIST = [
     { id: 'pink_noise', label: 'PINK' }
 ];
 
+const roundedWaveBtnGeo = createRoundedBoxGeometry(1.16, 0.84, 0.22, 0.05, 3);
+
 WAVE_LIST.forEach((w, idx) => {
     const px = (idx - 3) * 1.3;
+
+    // Recessed Bevel Frame
+    const cutout = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.92, 0.16), matDarkSteel);
+    cutout.position.set(px, 0, -0.02);
+    waveRackGroup.add(cutout);
+
     const waveMat = new THREE.MeshBasicMaterial({ map: createWaveformDiagramTexture(w.id, idx === 0) });
-    const meshBtn = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.85, 0.2), waveMat);
-    meshBtn.position.set(px, 0, 0.1);
+    const meshBtn = new THREE.Mesh(roundedWaveBtnGeo, waveMat);
+    meshBtn.position.set(px, 0, 0.10);
+    meshBtn.castShadow = true;
     meshBtn.userData = { type: 'waveBtn', wave: w.id, label: w.label };
     waveRackGroup.add(meshBtn);
     interactiveMeshes.push(meshBtn);
     waveBtnMaterials[w.id] = waveMat;
+    waveBtnMeshes[w.id] = meshBtn;
 });
 
 function updateWaveformButtonsUI() {
@@ -484,104 +865,194 @@ function updateWaveformButtonsUI() {
     });
 }
 
-// --- 3. MIDDLE FREQUENCY & AMPLITUDE LCD DISPLAYS ---
-const freqDisplayGroup = new THREE.Group();
-freqDisplayGroup.position.set(-CHASSIS_W * 0.12, CHASSIS_H * 0.06, CHASSIS_D * 0.5);
+// --- 3. MIDDLE VINTAGE METER DISPLAYS (BEVELED STEEL + GLASS COVER) ---
+function createMeterDisplayGroup(x, titleText, displayMat) {
+    const group = new THREE.Group();
+    group.position.set(x, CHASSIS_H * 0.06, CHASSIS_D * 0.5);
+
+    // Beveled Steel Outer Bezel
+    const meshFrame = new THREE.Mesh(new THREE.BoxGeometry(4.9, 3.3, 0.20), matDarkSteel);
+    meshFrame.castShadow = true;
+    group.add(meshFrame);
+
+    // Inner Dark Shadow Frame Rim (Backing plane)
+    const meshShadowRim = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.0), matInnerShadowBezel);
+    meshShadowRim.position.set(0, 0, 0.11);
+    group.add(meshShadowRim);
+
+    // Vintage Parchment Face
+    const meshFace = new THREE.Mesh(new THREE.PlaneGeometry(4.45, 2.85), displayMat);
+    meshFace.position.set(0, 0, 0.13);
+    group.add(meshFace);
+
+    // Glass Cover Plate with Specular Reflection
+    const glassMesh = new THREE.Mesh(new THREE.PlaneGeometry(4.45, 2.85), matGlassCover);
+    glassMesh.position.set(0, 0, 0.15);
+    group.add(glassMesh);
+
+    // Silkscreen Title Header
+    const headerMesh = createSilkscreenMesh(titleText, 2.4, 0.4, '#ffffff', 24);
+    headerMesh.position.set(0, 1.85, 0.02);
+    group.add(headerMesh);
+
+    return group;
+}
+
+const freqDisplayGroup = createMeterDisplayGroup(-CHASSIS_W * 0.12, 'FREQUENCY', matFreqDisplayFace);
 synthGroup.add(freqDisplayGroup);
 
-const meshFreqFrame = new THREE.Mesh(new THREE.BoxGeometry(4.8, 3.2, 0.2), matDarkBezel);
-freqDisplayGroup.add(meshFreqFrame);
-const meshFreqFace = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 2.8), matFreqDisplay);
-meshFreqFace.position.set(0, 0, 0.11);
-freqDisplayGroup.add(meshFreqFace);
-
-const freqHeaderTex = create3DTextTexture('FREQUENCY', 256, 64, null, '#ffffff', 24);
-const freqHeaderMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.4), new THREE.MeshBasicMaterial({ map: freqHeaderTex, transparent: true }));
-freqHeaderMesh.position.set(0, 1.8, 0.02);
-freqDisplayGroup.add(freqHeaderMesh);
-
-const ampDisplayGroup = new THREE.Group();
-ampDisplayGroup.position.set(CHASSIS_W * 0.28, CHASSIS_H * 0.06, CHASSIS_D * 0.5);
+const ampDisplayGroup = createMeterDisplayGroup(CHASSIS_W * 0.28, 'AMPLITUDE', matAmpDisplayFace);
 synthGroup.add(ampDisplayGroup);
 
-const meshAmpFrame = new THREE.Mesh(new THREE.BoxGeometry(4.8, 3.2, 0.2), matDarkBezel);
-ampDisplayGroup.add(meshAmpFrame);
-const meshAmpFace = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 2.8), matAmpDisplay);
-meshAmpFace.position.set(0, 0, 0.11);
-ampDisplayGroup.add(meshAmpFace);
+// --- 4. MULTI-RING HARDWARE KNOBS (gui1.1.png & N-CONSOLE STYLE WITH GRUNGE CAPS) ---
+// Colored anodized cap materials with grungy metallic wear textures
+const knobCapMaterials = {
+    freq: new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: generateAnodizedKnobGrungeTexture('#3b5973'),
+        bumpMap: generateAnodizedKnobGrungeTexture('#3b5973'),
+        bumpScale: 0.008,
+        roughness: 0.35,
+        metalness: 0.70
+    }),
+    env: new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: generateAnodizedKnobGrungeTexture('#9e3b33'),
+        bumpMap: generateAnodizedKnobGrungeTexture('#9e3b33'),
+        bumpScale: 0.008,
+        roughness: 0.35,
+        metalness: 0.70
+    }),
+    arp: new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: generateAnodizedKnobGrungeTexture('#33855a'),
+        bumpMap: generateAnodizedKnobGrungeTexture('#33855a'),
+        bumpScale: 0.008,
+        roughness: 0.35,
+        metalness: 0.70
+    }),
+    gold: new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: generateAnodizedKnobGrungeTexture('#a88532'),
+        bumpMap: generateAnodizedKnobGrungeTexture('#a88532'),
+        bumpScale: 0.008,
+        roughness: 0.35,
+        metalness: 0.70
+    })
+};
 
-const ampHeaderTex = create3DTextTexture('AMPLITUDE', 256, 64, null, '#ffffff', 24);
-const ampHeaderMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.4), new THREE.MeshBasicMaterial({ map: ampHeaderTex, transparent: true }));
-ampHeaderMesh.position.set(0, 1.8, 0.02);
-ampDisplayGroup.add(ampHeaderMesh);
+const matKnobRubberSkirt = new THREE.MeshStandardMaterial({
+    color: 0x1a1d20,
+    map: rubberKnobNoiseMap,
+    bumpMap: rubberKnobNoiseMap,
+    bumpScale: 0.010,
+    roughness: 0.80,
+    metalness: 0.20
+});
+const matSubKnobShadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false });
 
-// --- 4. 3D ROTARY KNOBS (STATIC TEXT LABELS ATTACHED TO SYNTH CHASSIS) ---
-function create3DKnob(parent, x, y, id, label, minV, maxV, defaultVal) {
+function create3DKnob(parent, x, y, id, label, minV, maxV, defaultVal, capCategory = 'freq') {
     const knobGroup = new THREE.Group();
     knobGroup.position.set(x, y, CHASSIS_D * 0.5);
     parent.add(knobGroup);
 
-    const meshBody = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 0.4, 32), matKnobTeal);
-    meshBody.rotation.x = Math.PI / 2;
-    meshBody.userData = { type: 'knob3d', id: id, label: label, minVal: minV, maxVal: maxV };
-    knobGroup.add(meshBody);
-    interactiveMeshes.push(meshBody);
+    // Sub-knob Contact Shadow Disk
+    const shadowRing = new THREE.Mesh(new THREE.RingGeometry(0.01, 0.54, 32), matSubKnobShadow);
+    shadowRing.rotation.x = Math.PI;
+    shadowRing.position.set(0, 0, 0.01);
+    knobGroup.add(shadowRing);
 
-    const meshNotch = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.25, 0.42), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    meshNotch.position.set(0, 0.2, 0);
-    meshBody.add(meshNotch);
+    // Rotatable Knob Assembly
+    const knobBodyGroup = new THREE.Group();
+    knobGroup.add(knobBodyGroup);
+
+    // 1. Outer Knurled Rubber Skirt (24 Ridges)
+    const skirtBody = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.46, 0.26, 32), matKnobRubberSkirt);
+    skirtBody.rotation.x = Math.PI / 2;
+    skirtBody.castShadow = true;
+    knobBodyGroup.add(skirtBody);
+
+    // 24 ridges around circumference
+    const ridgeGeo = new THREE.BoxGeometry(0.04, 0.24, 0.05);
+    for (let i = 0; i < 24; i++) {
+        const ang = (i / 24) * Math.PI * 2;
+        const ridge = new THREE.Mesh(ridgeGeo, matKnobRubberSkirt);
+        ridge.position.set(Math.cos(ang) * 0.45, Math.sin(ang) * 0.45, 0);
+        ridge.rotation.z = ang;
+        knobBodyGroup.add(ridge);
+    }
+
+    // 2. Inner Chamfered Metallic Cap
+    const capMat = knobCapMaterials[capCategory] || knobCapMaterials.freq;
+    const innerCap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 0.34, 32), capMat);
+    innerCap.rotation.x = Math.PI / 2;
+    innerCap.castShadow = true;
+    knobBodyGroup.add(innerCap);
+
+    // Interactivity Target Data
+    skirtBody.userData = { type: 'knob3d', id: id, label: label, minVal: minV, maxVal: maxV };
+    innerCap.userData = skirtBody.userData;
+    interactiveMeshes.push(skirtBody);
+    interactiveMeshes.push(innerCap);
+
+    // 3. Debossed White Indicator Line Notch
+    const meshNotch = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.36), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 }));
+    meshNotch.position.set(0, 0.22, 0);
+    knobBodyGroup.add(meshNotch);
 
     // Static Label text attached to PARENT chassis group (does NOT rotate with knob)
-    const lblTex = create3DTextTexture(label, 256, 64, null, '#ffffff', 22);
-    const lblMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), new THREE.MeshBasicMaterial({ map: lblTex, transparent: true }));
+    const lblMesh = createSilkscreenMesh(label, 0.9, 0.3, '#e8ecf0', 22);
     lblMesh.position.set(x, y - 0.65, CHASSIS_D * 0.5 + 0.02);
     parent.add(lblMesh);
 
-    knobGroups[id] = knobGroup;
-    knobMeshes[id] = meshBody;
+    knobGroups[id] = knobBodyGroup;
+    knobMeshes[id] = skirtBody;
 }
 
-create3DKnob(synthGroup, -CHASSIS_W * 0.24, -CHASSIS_H * 0.18, 'base_freq', 'FREQ', 0.0, 1.0, 0.40);
-create3DKnob(synthGroup, -CHASSIS_W * 0.16, -CHASSIS_H * 0.18, 'freq_ramp', 'SPEED', -1.0, 1.0, 0.20);
-create3DKnob(synthGroup, -CHASSIS_W * 0.08, -CHASSIS_H * 0.18, 'freq_dramp', 'ACCEL', -1.0, 1.0, 0.00);
-create3DKnob(synthGroup, 0.0, -CHASSIS_H * 0.18, 'arp_mod', 'BEND', -1.0, 1.0, 0.00);
+create3DKnob(synthGroup, -CHASSIS_W * 0.24, -CHASSIS_H * 0.18, 'base_freq', 'FREQ', 0.0, 1.0, 0.40, 'freq');
+create3DKnob(synthGroup, -CHASSIS_W * 0.16, -CHASSIS_H * 0.18, 'freq_ramp', 'SPEED', -1.0, 1.0, 0.20, 'freq');
+create3DKnob(synthGroup, -CHASSIS_W * 0.08, -CHASSIS_H * 0.18, 'freq_dramp', 'ACCEL', -1.0, 1.0, 0.00, 'freq');
+create3DKnob(synthGroup, 0.0, -CHASSIS_H * 0.18, 'arp_mod', 'BEND', -1.0, 1.0, 0.00, 'arp');
 
-create3DKnob(synthGroup, CHASSIS_W * 0.16, -CHASSIS_H * 0.18, 'env_attack', 'ATTACK', 0.0, 0.5, 0.02);
-create3DKnob(synthGroup, CHASSIS_W * 0.24, -CHASSIS_H * 0.18, 'env_decay', 'DECAY', 0.01, 1.0, 0.15);
-create3DKnob(synthGroup, CHASSIS_W * 0.32, -CHASSIS_H * 0.18, 'env_sustain', 'SUSTAIN', 0.0, 1.0, 0.60);
-create3DKnob(synthGroup, CHASSIS_W * 0.40, -CHASSIS_H * 0.18, 'env_release', 'RELEASE', 0.01, 1.0, 0.25);
+create3DKnob(synthGroup, CHASSIS_W * 0.16, -CHASSIS_H * 0.18, 'env_attack', 'ATTACK', 0.0, 0.5, 0.02, 'env');
+create3DKnob(synthGroup, CHASSIS_W * 0.24, -CHASSIS_H * 0.18, 'env_decay', 'DECAY', 0.01, 1.0, 0.15, 'env');
+create3DKnob(synthGroup, CHASSIS_W * 0.32, -CHASSIS_H * 0.18, 'env_sustain', 'SUSTAIN', 0.0, 1.0, 0.60, 'env');
+create3DKnob(synthGroup, CHASSIS_W * 0.40, -CHASSIS_H * 0.18, 'env_release', 'RELEASE', 0.01, 1.0, 0.25, 'env');
 
 function syncKnobRotations() {
     for (const id in knobGroups) {
-        const group = knobGroups[id];
+        const bodyGroup = knobGroups[id];
         const mesh = knobMeshes[id];
         const fp = mesh.userData;
         const val = STATE.params[id] || 0;
         const norm = (val - fp.minVal) / (fp.maxVal - fp.minVal);
-        group.rotation.z = -(norm - 0.5) * Math.PI * 1.5;
+        bodyGroup.rotation.z = -(norm - 0.5) * Math.PI * 1.5;
     }
     updateWaveformButtonsUI();
     updateDisplayTextures();
 }
 
-// --- 5. BOTTOM 3D VIRTUAL PIANO KEYBOARD ---
+// --- 5. BOTTOM 3D VIRTUAL PIANO KEYBOARD WITH TACTILE ROUNDED KEYS ---
 const pianoGroup = new THREE.Group();
 pianoGroup.position.set(0, -CHASSIS_H * 0.38, CHASSIS_D * 0.5);
 synthGroup.add(pianoGroup);
+
+const roundedWhiteKeyGeo = createRoundedBoxGeometry(0.80, 2.2, 0.25, 0.04, 3);
+const roundedBlackKeyGeo = createRoundedBoxGeometry(0.48, 1.3, 0.35, 0.03, 3);
 
 let whiteKeyCount = 0;
 PIANO_KEYS.forEach((pk, idx) => {
     if (!pk.isBlack) {
         const px = (whiteKeyCount - 6.5) * 0.85;
-        const meshKey = new THREE.Mesh(new THREE.BoxGeometry(0.80, 2.2, 0.25), matWhiteKey);
+        const meshKey = new THREE.Mesh(roundedWhiteKeyGeo, matWhiteKey);
         meshKey.position.set(px, 0, 0.1);
+        meshKey.castShadow = true;
         meshKey.userData = { type: 'pianoKey', note: pk.note, freq: pk.freq, index: idx };
         pianoGroup.add(meshKey);
         interactiveMeshes.push(meshKey);
         pianoKeyMeshes.push(meshKey);
 
-        const keyLblTex = create3DTextTexture(pk.note, 128, 64, null, '#555555', 20);
-        const keyLblMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), new THREE.MeshBasicMaterial({ map: keyLblTex, transparent: true }));
+        const keyLblMesh = createSilkscreenMesh(pk.note, 0.5, 0.3, '#555555', 20);
         keyLblMesh.position.set(0, -0.7, 0.13);
         meshKey.add(keyLblMesh);
 
@@ -596,8 +1067,9 @@ PIANO_KEYS.forEach((pk, idx) => {
         whiteKeyCount++;
     } else {
         const px = (whiteKeyCount - 7.0) * 0.85 + 0.42;
-        const meshKey = new THREE.Mesh(new THREE.BoxGeometry(0.48, 1.3, 0.35), matBlackKey);
+        const meshKey = new THREE.Mesh(roundedBlackKeyGeo, matBlackKey);
         meshKey.position.set(px, 0.45, 0.2);
+        meshKey.castShadow = true;
         meshKey.userData = { type: 'pianoKey', note: pk.note, freq: pk.freq, index: idx };
         pianoGroup.add(meshKey);
         interactiveMeshes.push(meshKey);
@@ -724,9 +1196,16 @@ updateResponsiveCamera();
 
 syncKnobRotations();
 
-// Render Loop
-function render() {
+// Render Loop with Subtle Organic Studio Spotlight Swaying
+function render(time) {
     requestAnimationFrame(render);
+
+    if (vignetteSpotLight && time) {
+        const t = time * 0.0007; // Very smooth, gentle motion
+        vignetteSpotLight.position.x = Math.sin(t) * 1.5;
+        vignetteSpotLight.position.y = 3.0 + Math.cos(t * 0.6) * 0.7;
+    }
+
     renderer.render(scene, camera);
 }
 

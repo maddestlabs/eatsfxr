@@ -34,7 +34,7 @@ body, html {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background: radial-gradient(circle at 50% 45%, #181c26 0%, #06070a 100%);
+    background: radial-gradient(circle at 50% 45%, #121820 0%, #07090c 100%);
 }
 
 /* Header Bar */
