@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPC-2000XL LabCore WebAssembly Sampler</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { background: #07080b; color: #fff; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; height: 100vh; width: 100vw; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #canvas { width: 100vw; height: 100vh; display: block; border: 0 none; outline: none; cursor: pointer; }
+        .hud-banner { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(20, 24, 32, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px; padding: 8px 20px; font-size: 0.9rem; color: #e2e8f0; box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; z-index: 10; display: flex; align-items: center; gap: 10px; }
+        .hud-banner span { color: #f59e0b; font-weight: bold; }
+        .loading { position: absolute; font-size: 1.2rem; color: #d4af37; letter-spacing: 1px; font-weight: bold; pointer-events: none; z-index: 20; }
+    </style>
+</head>
+<body>
+    <div id="status" class="loading">Loading LabCore C++ WASM Engine...</div>
+    <div class="hud-banner">
+        <span>🥁 MPC-2000XL + N-CONSOLE</span> Click Pads or Press <strong>1-4</strong>, <strong>Z-V</strong>, <strong>A-F</strong>, <strong>Q-R</strong>
+    </div>
+    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+    <script type="text/javascript">
+      function resizeCanvas() {
+        var canvas = document.getElementById('canvas');
+        if (canvas) {
+          var dpr = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(window.innerWidth * dpr);
+          canvas.height = Math.floor(window.innerHeight * dpr);
+        }
+      }
+      window.addEventListener('resize', resizeCanvas);
+      window.addEventListener('DOMContentLoaded', resizeCanvas);
+
+      // Keyboard pad mapping
+      var KEY_MAP = {
+        '1': 1,  '2': 2,  '3': 3,  '4': 4,
+        'z': 5,  'x': 6,  'c': 7,  'v': 8,
+        'a': 9,  's': 10, 'd': 11, 'f': 12,
+        'q': 13, 'w': 14, 'e': 15, 'r': 16
+      };
+
+      function handleHit(padIndex, velocity) {
+        if (window._audCtx && window._audCtx.state === 'suspended') {
+            window._audCtx.resume();
+        }
+        if (typeof Module !== 'undefined' && Module._triggerPad) {
+            Module._triggerPad(padIndex, velocity || 1.0);
+        }
+      }
+
+      window.addEventListener('keydown', function(e) {
+        var k = e.key.toLowerCase();
+        if (KEY_MAP.hasOwnProperty(k)) {
+            handleHit(KEY_MAP[k], 1.0);
+        }
+      });
+
+      var Module = {
+        preRun: [],
+        postRun: [function() {
+            document.getElementById('status').style.display = 'none';
+            resizeCanvas();
+            console.log('[LabCore WASM] C++ Engine initialized & resized canvas successfully.');
+
+            // Canvas Click Hit Testing
+            var canvas = document.getElementById('canvas');
+            canvas.addEventListener('mousedown', function(e) {
+                var rect = canvas.getBoundingClientRect();
+                var clickX = e.clientX - rect.left;
+                var clickY = e.clientY - rect.top;
+                
+                // Normalized Device Coordinates (-1 to +1)
+                var nx = (clickX / rect.width) * 2.0 - 1.0;
+                var ny = 1.0 - (clickY / rect.height) * 2.0;
+
+                // Test 4x4 Pad Grid bounds:
+                // startX = 0.08, startY = -0.45, padW = 0.16, padH = 0.16, gapX = 0.20, gapY = 0.20
+                for (var row = 0; row < 4; row++) {
+                    for (var col = 0; col < 4; col++) {
+                        var px = 0.08 + col * 0.20;
+                        var py = -0.45 + row * 0.20;
+                        var halfW = 0.16 / 2.0;
+                        var halfH = 0.16 / 2.0;
+
+                        if (Math.abs(nx - px) <= halfW && Math.abs(ny - py) <= halfH) {
+                            var padIndex = row * 4 + col + 1;
+                            handleHit(padIndex, 1.0);
+                            return;
+                        }
+                    }
+                }
+                // Fallback click on any part of canvas triggers Pad 1
+                handleHit(1, 1.0);
+            });
+        }],
+        canvas: (function() {
+          var canvas = document.getElementById('canvas');
+          canvas.addEventListener("webglcontextlost", function(e) { alert('WebGL context lost. Reload page.'); e.preventDefault(); }, false);
+          return canvas;
+        })(),
+        setStatus: function(text) {
+          if (!text) return;
+          var statusElement = document.getElementById('status');
+          if (statusElement) statusElement.innerHTML = text;
+        }
+      };
+    </script>
+    {{{ SCRIPT }}}
+</body>
+</html>

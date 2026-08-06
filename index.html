@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>eatSFXR • ChipTone 3D Synthesizer & Lua Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Share+Tech+Mono&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Fengari Lua 5.4 VM -->
+    <script src="https://unpkg.com/fengari-web@0.1.4/dist/fengari-web.js"></script>
+
+    <!-- Import maps for Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="app">
+        <!-- 3D Canvas Viewport (Pure 3D Hardware Interface) -->
+        <main id="canvas-container"></main>
+
+        <!-- 3D Raycast Tooltip -->
+        <div id="hud-tooltip" class="hud-tooltip hidden">
+            <div id="hud-label" class="hud-label">PICKUP / COIN</div>
+            <div id="hud-value" class="hud-value">WAVE: Square • FREQ: 0.45</div>
+        </div>
+
+        <!-- Minimal Footer Badge -->
+        <footer class="ui-footer">
+            <div class="apple-badge">
+                <span>eatSFXR Engine • Pure 3D Physical UI & Lua Scripting Core</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Application Scripts -->
+    <script src="build_wasm/eatsfxr.js"></script>
+    <script src="wasm_loader.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

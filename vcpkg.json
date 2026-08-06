@@ -1,0 +1,12 @@
+{
+  "name": "labcore-drumpad",
+  "version-string": "1.0.0",
+  "description": "MPC2000XL 3D Drum Pad Sampler using LabCore Engine (Filament + LabSound + Lua5.4)",
+  "homepage": "https://github.com/labcore/drumpad",
+  "dependencies": [
+    "filament",
+    "labsound",
+    "lua",
+    "sol2"
+  ]
+}
