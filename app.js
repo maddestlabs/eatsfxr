@@ -702,14 +702,6 @@ function showTooltip(x, y, label, valStr) {
     hudTooltip.classList.remove('hidden');
 }
 
-function showTooltip(x, y, label, valStr) {
-    hudLabel.textContent = label;
-    hudValue.textContent = valStr;
-    hudTooltip.style.left = `${x}px`;
-    hudTooltip.style.top = `${y}px`;
-    hudTooltip.classList.remove('hidden');
-}
-
 // Responsive Camera Auto-Framing for Desktop & Mobile Screens
 function updateResponsiveCamera() {
     const width = window.innerWidth;
