@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 project(eatSFXR LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 20)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8.0")
+    set(CMAKE_CXX_STANDARD 17)
+else()
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(EMSCRIPTEN)
@@ -74,12 +78,12 @@ else()
     add_executable(eatsfxr ${SOURCES})
 
     target_link_libraries(eatsfxr PRIVATE
+        sol2::sol2
+        LabSound::LabSound
         filament::filament
         filament::backend
         filament::math
-        LabSound::LabSound
         ${LUA_LIBRARIES}
-        sol2::sol2
     )
 
     add_custom_command(TARGET eatsfxr POST_BUILD

@@ -117,7 +117,7 @@ void LabSampler::buildFilamentPBRScene() {
     std::cout << "[Filament] Setting up Orthographic Camera & PBR Scene..." << std::endl;
 
     // 1. Orthographic Camera Setup (Zero Perspective Distortion)
-    m_orthoCamera = m_engine->createCamera();
+    m_orthoCamera = m_engine->createCamera(utils::EntityManager::get().create());
     float aspect = 16.0f / 9.0f;
     float orthoWidth = 14.0f;
     float orthoHeight = orthoWidth / aspect;
@@ -225,7 +225,7 @@ void LabSampler::buildLabSoundWebAudioGraph() {
     std::cout << "[LabSound] Initializing Native C++ WebAudio Context..." << std::endl;
 
     // Create LabSound Native AudioContext
-    m_audioContext = lab::MakeAudioContext();
+    m_audioContext = std::make_shared<lab::AudioContext>(false);
 
     // Master Volume GainNode
     m_masterGainNode = std::make_shared<lab::GainNode>(*m_audioContext);
@@ -233,12 +233,11 @@ void LabSampler::buildLabSoundWebAudioGraph() {
 
     // Master BiquadFilterNode (Lowpass)
     m_masterFilterNode = std::make_shared<lab::BiquadFilterNode>(*m_audioContext);
-    m_masterFilterNode->setType(lab::BiquadFilterNode::Type::LOWPASS);
+    m_masterFilterNode->setType(lab::FilterType::LOWPASS);
     m_masterFilterNode->frequency()->setValue(20000.0f);
 
     // Connect WebAudio Nodes: Filter -> Master Gain -> AudioContext Destination
-    m_audioContext->connect(m_masterFilterNode, m_masterGainNode, 0, 0);
-    m_audioContext->connect(m_masterGainNode, m_audioContext->destination(), 0, 0);
+    m_audioContext->connect(m_masterGainNode, m_audioContext->destinationNode(), 0, 0);
 
     std::cout << "[LabSound] Native WebAudio Node Graph Connected & Running." << std::endl;
 #else
@@ -455,7 +454,7 @@ void LabSampler::update(float deltaTime) {
 void LabSampler::shutdown() {
 #ifndef __EMSCRIPTEN__
     if (m_engine && m_orthoCamera) {
-        m_engine->destroy(m_orthoCamera);
+        m_engine->destroyCameraComponent(m_orthoCamera->getEntity());
         m_orthoCamera = nullptr;
     }
 #endif

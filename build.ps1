@@ -33,6 +33,47 @@ Set-Location ..
 
 Write-Host "[Success] C++ WASM compilation completed!" -ForegroundColor Green
 
+# Print Resulting Binary & Build Artifact Sizes
+Write-Host "`n---------------------------------------------------------" -ForegroundColor DarkGray
+Write-Host " Resulting Binary & Build Artifact Sizes:" -ForegroundColor Cyan
+Write-Host "---------------------------------------------------------" -ForegroundColor DarkGray
+
+$filesToMeasure = @(
+    "build_wasm/eatsfxr.wasm",
+    "build_wasm/eatsfxr.js",
+    "build_wasm/eatsfxr.html",
+    "app.js",
+    "style.css",
+    "wasm_loader.js"
+)
+
+$totalRaw = 0
+$totalGz = 0
+
+foreach ($filePath in $filesToMeasure) {
+    if (Test-Path $filePath) {
+        $file = Get-Item $filePath
+        $bytes = $file.Length
+        $totalRaw += $bytes
+        $kb = [math]::Round($bytes / 1024, 1)
+
+        $rawBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+        $ms = New-Object System.IO.MemoryStream
+        $gs = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress)
+        $gs.Write($rawBytes, 0, $rawBytes.Length)
+        $gs.Close()
+        $gzBytes = $ms.ToArray().Length
+        $totalGz += $gzBytes
+        $gzKb = [math]::Round($gzBytes / 1024, 1)
+        $ms.Close()
+
+        Write-Host ("  {0,-24} : {1,7} KB  (Gzipped: {2,5} KB)" -f $file.Name, $kb, $gzKb) -ForegroundColor White
+    }
+}
+Write-Host "---------------------------------------------------------" -ForegroundColor DarkGray
+Write-Host ("  {0,-24} : {1,7} KB  (Gzipped: {2,5} KB)" -f "Total App Bundle", [math]::Round($totalRaw / 1024, 1), [math]::Round($totalGz / 1024, 1)) -ForegroundColor Yellow
+Write-Host "---------------------------------------------------------" -ForegroundColor DarkGray
+
 # 3. Terminate Existing Server on Port
 Write-Host "`n[2/4] Checking for existing server processes on port $Port..." -ForegroundColor Yellow
 $connections = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue

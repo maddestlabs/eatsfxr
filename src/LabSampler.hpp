@@ -17,6 +17,7 @@
 #include <filament/RenderableManager.h>
 #include <filament/TransformManager.h>
 #include <utils/Entity.h>
+#include <utils/EntityManager.h>
 
 // LabSound Native WebAudio Engine Includes
 #include <LabSound/LabSound.h>
@@ -24,7 +25,11 @@
 #include <LabSound/core/GainNode.h>
 #include <LabSound/core/BiquadFilterNode.h>
 #include <LabSound/core/ConvolverNode.h>
+#if __has_include(<LabSound/extended/SampledAudioNode.h>)
 #include <LabSound/extended/SampledAudioNode.h>
+#else
+#include <LabSound/core/SampledAudioNode.h>
+#endif
 
 // Lua 5.4 & Sol2 Includes
 #include <sol/sol.hpp>

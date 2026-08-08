@@ -3,7 +3,9 @@
 #include <thread>
 #include "LabSampler.hpp"
 
-#ifdef __EMSCRIPTEN__
+#ifndef __EMSCRIPTEN__
+#include <filament/Viewport.h>
+#else
 #include <emscripten.h>
 #include <emscripten/html5.h>
 #endif
@@ -51,7 +53,7 @@ int main(int argc, char** argv) {
 
 #ifndef __EMSCRIPTEN__
     // Create Desktop Filament Engine instance
-    filament::Engine* engine = filament::Engine::create(filament::Engine::Backend::SHARED_GL);
+    filament::Engine* engine = filament::Engine::create(filament::Engine::Backend::OPENGL);
     if (!engine) {
         std::cerr << "[Error] Failed to initialize Google Filament Engine!" << std::endl;
         return 1;
@@ -62,7 +64,7 @@ int main(int argc, char** argv) {
     filament::View* view = engine->createView();
 
     view->setScene(scene);
-    view->setViewport({ 0, 0, 1920, 1080 });
+    view->setViewport(filament::Viewport(0, 0, 1920, 1080));
 
     g_sampler->initialize(engine, view, scene);
 
